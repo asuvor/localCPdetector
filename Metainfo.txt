@@ -1,10 +1,14 @@
 Name of QuantLet:  MultiscaleCPDetector
 
-Published in:      ‘Work in progress’
+Published in:      Work in progress
 
-Description:       ‘Illustrates how multiscale local change point detector works. Cirtical values are calibrated using training set with changepoints.’
+Description:       Illustrates how multiscale local change point detector works. Cirtical values are calibrated using training set with changepoints.
 
 Keywords:          bootstrap, calibration, time-series, MLE, log-likelihood, visualisation 
 
 Author:            [New] Alexandra Suvorikova
+
+Submitted:
+
+Example:            Plot of observed data (at the upper panel) the test statistic, computed using three different scale sizes 
 

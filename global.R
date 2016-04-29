@@ -10,10 +10,10 @@ list.of.colours = list('darkcyan'      = '#008B8B',
                        'dartmouthgrey' = '#00703C',
                        'chamoisee'     = '#A0785A', 
                        'fuchsiarose'   = '#C74375')
-H                = c(10, 20, 30) #set of scales
+H                = c(15, 30, 40) #set of scales
 N.cps            = 100 #the total number of change points
 theta            = 120 #the width of main windows
-M                = 20
+M                = 60
 N                = 400 #size of the bootstrap sample
 go               = FALSE
 startstop        = FALSE
@@ -214,11 +214,11 @@ GenerateDataOnline = function (family = c('Poisson', 'Gaussian', 'Bernoulli'), m
 
 #generate MC
 MCDataGeneration = function (true.family, palette, N.cps) {
-    list.of.params = list('Poisson'   = list('a' = 10, 'b' = 15, 'c' = 4, 'd' = 17, 'e' =  6),
-                           'Gaussian'  = list('a' = c(12, 8), 'b' = c(19, 8.5), 'c' = c(25, 9),
-                                              'd' = c(29, 8), 'e' =  c(34, 10)),
-                           'Bernoulli' = list('a' = 0.9, 'b' = 0.1, 'c' = 0.4, 
-                                              'd' = 0.75, 'e' =  0.6),                         
+    list.of.params = list('Poisson'   = list('a' = 10, 'b' = 12, 'c' = 15, 'd' = 17, 'e' =  21),
+                           'Gaussian'  = list('a' = c(10, 8), 'b' = c(12, 8.5), 'c' = c(18, 9),
+                                              'd' = c(23, 8), 'e' =  c(27, 10)),
+                           'Bernoulli' = list('a' = 0.1, 'b' = 0.3, 'c' = 0.5, 
+                                              'd' = 0.75, 'e' =  0.8),                         
                            'colours'   = list('a' = palette[['darkcyan']], 
                                               'b' = palette[['bluebell']], 
                                               'c' = palette[['dartmouthgrey']],
@@ -234,11 +234,16 @@ MCDataGeneration = function (true.family, palette, N.cps) {
                                                    0.25, 0.25, 0.25, 0   , 0.25,
                                                    0.25, 0.25, 0.25, 0.25, 0), 
                                                  byrow = TRUE, nrow = 5, dimnames = list(statesNames, statesNames)))
-    list.of.states  = rmarkovchain(n = N.cps, mcA)
-    list.of.lengths = rpois(N.cps, 80)
-    data.colours    = rmarkovchain(n = N.cps, mcA)
-    out             = matrix(NA, 6, N.cps)
-    rownames(out)   = c('MeanState','VarState','length', 'start', 'end', 'colour')
+    list.of.states        = rmarkovchain(n = N.cps, mcA)
+    list.of.lengths       = rpois(N.cps, 80)
+    #one change point inside the training set
+    list.of.lengths[1:2]  = c(N / 2, N / 2) 
+    #respectively small one
+    list.of.states[1 : 2] = c('a', 'b')
+    
+    data.colours          = rmarkovchain(n = N.cps, mcA)
+    out                   = matrix(NA, 6, N.cps)
+    rownames(out)         = c('MeanState','VarState','length', 'start', 'end', 'colour')
     for (i in (1 : N.cps)) {
         out['MeanState', i]  = list.of.params[[true.family]][[list.of.states[i]]][1] 
         out['length', i]     = list.of.lengths[[i]]  
@@ -337,81 +342,73 @@ GenerateBootstrapLine = function(start, n, family.real, family.pa, family.boot, 
 }
 
 BootLikelihood = function(data, coeff,family = c('Poisson', 'Gaussian', 'Bernoulli')){
-    stat = rep(0, length(data))
-    if (sum(coeff) != 0) {
-        theta = sum(data * coeff) / sum(coeff) 
+    rm.flag = 0
+    if (sum(coeff) == 0){
+        rm.flag = 1
     } else {
-        theta = sum(data * coeff) / 0.0001 
+      theta = sum(data * coeff) / sum(coeff)
+      if (family == 'Poisson') {
+          if (theta == 0) {
+              rm.flag = 1
+          } else {
+            data = data * log(theta) - theta  
+          }
+      }
+      if (family == 'Gaussian'){
+          data = -.5 * (data - theta) * (data - theta)
+      }
+      if (family == 'Bernoulli') {
+          if ((theta <= 0) | (theta >= 1)) {
+              rm.flag = 1
+          } else {
+            data = data * (log(theta) - log(1 - theta)) + log(1 - theta) 
+          }
+      }
     }
-    if (family == 'Poisson') {
-        if(theta == 0){
-            theta = 0.001
-        }
-        data = data * log(theta) - theta
+    if (rm.flag == 1){
+        out = NA
+    } else {
+      out = sum(data * coeff)   
     }
-    if (family == 'Gaussian'){ 
-        data = -.5 * (data - theta) * (data - theta)
-    }
-    if (family == 'Bernoulli'){
-        if (theta <= 0) {
-            theta = 0.001
-        }
-        if (theta >= 1) {
-            theta = 0.999
-        }
-        data = data * (log(theta) - log(1 - theta)) + log(1 - theta)
-    } 
-    out = sum(data * coeff) 
     return(out)
 }
 
 BootLikelihoodSm <- function(data, coeff, family = c('Poisson', 'Gaussian', 'Bernoulli')){
+    rm.flag = 0
     r  = length(data) / 2
     sm = mean(data[1:r]) - mean(data[(r + 1): (2 * r)])  #bias correction
-    if (family == 'Gaussian') {
-        if (sum(coeff) == 0) {
-            theta = (sum(data * coeff) - sm * sum(coeff[1 : r])) / 0.0001
-        } else {
-            theta = (sum(data * coeff) - sm * sum(coeff[1 : r])) / sum(coeff)
+    if (sum(coeff) == 0){
+        rm.flag = 1
+    } else {
+        theta = sum(data * coeff)  / sum(coeff)
+        if (family == 'Gaussian') {
+            data1 = -.5 * (data[1:r] - theta - sm) * (data[1:r] - theta - sm)
+            data2 = -.5 * (data[(r + 1): (2 * r)] - theta) * (data[(r + 1): (2 * r)] - theta)
         }
-        data1 = -.5 * (data[1:r] - theta - sm) * (data[1:r] - theta - sm)
-        data2 = -.5 * (data[(r + 1): (2 * r)] - theta) * (data[(r + 1): (2 * r)] - theta)
+        if (family == 'Poisson') {
+            if ((theta + sm <= 0) | (theta <= 0)) {
+                rm.flag = 1
+            } else {
+                data1 = log(theta + sm) * data[1:r] - (theta + sm)
+                data2 = log(theta) * data[(r + 1):(2 * r)] - theta
+            }
+        }
+        if (family == 'Bernoulli') {
+            if ((theta >= 1) | (theta <= 0) | (theta + sm <= 0) | (theta + sm >= 1)) {
+                rm.flag = 1
+            } else {
+                data1 = data[1:r] * (log(theta + sm) - log(1 - (theta + sm))) + log(1 - (theta + sm))
+                data2 = data[(r + 1):(2 * r)] * (log(theta) - log(1 - theta)) + log(1 - theta)              
+            }
+        }
     }
-    if (family == 'Poisson') {
-        if (sum(coeff) == 0) {
-            theta = sum(data * coeff)  / 0.0001
-        } else {
-            theta = sum(data * coeff)  / sum(coeff)
-        }
-        data1 = log(theta + sm) * data[1:r] - (theta + sm)
-        data2 = log(theta) * data[(r + 1):(2 * r)] - theta
+    if (rm.flag == 1){
+      out = NA
+    } else {
+      out = sum(c(data1, data2) * coeff)  
     }
-    if (family == 'Bernoulli') {
-        if (sum(coeff) == 0) {
-            theta = sum(data * coeff)  / 0.0001
-        } else {
-            theta = sum(data * coeff)  / sum(coeff)
-        }
-        if (theta >= 1) {
-            theta = .999
-        }
-        if (theta <= 0) {
-            theta = .001
-        }
-        if (theta + sm <= 0) {
-            theta.shifted = .001
-        }else if (theta + sm >= 1) {
-            theta.shifted = .999
-        } else {
-            theta.shifted = theta + sm
-        }
-        data1 = data[1:r] * (log(theta.shifted) - log(1 - theta.shifted)) + log(1 - theta.shifted)
-        data2 = data[(r + 1):(2 * r)] * (log(theta) - log(1 - theta)) + log(1 - theta.shifted)
-    }
-    out = sum(c(data1, data2) * coeff)
     return(out)
 }
-
 
 BootLRT = function(data.left, data.right, coeff.left, coeff.right, family){
     LL.left  = BootLikelihood(data.left, coeff.left, family)
@@ -421,8 +418,8 @@ BootLRT = function(data.left, data.right, coeff.left, coeff.right, family){
 }
 
 BootstrapValues = function(data, family.pa, family.boot, H, pattern, M, alpha, session){
-    stat.triang = matrix(0, length(H), M)
-    stat        = matrix(NA, length(H), M * length(data))
+    stat.triang = matrix(0, 2 * length(H), M)
+    stat        = matrix(NA, 2 * length(H), M * length(data))
     out         = rep(0, length(H)) 
     iter        = rep(0, length(H))
     withProgress(message = 'Applying bootstrap procedure', value = 0.01, {
@@ -442,7 +439,10 @@ BootstrapValues = function(data, family.pa, family.boot, H, pattern, M, alpha, s
                                                     coeff.left = coeff[(i - 2 * H[h] + 1):(i - H[h])], 
                                                     coeff.right = coeff[(i - H[h] + 1 ):i],
                                                     family = family.pa)))
-                
+                    if (is.na(stat.max[h,i])){
+                        stat.max[h, i] = (stat.max[h, i - 2] + stat.max[h, i - 1]) / 2
+                    }
+
                     if (pattern == 'Least squares') {
                         if (i >= 3 * H[h] + 1) {
                             iter[h]  = iter[h] + 1
@@ -473,13 +473,12 @@ BootstrapValues = function(data, family.pa, family.boot, H, pattern, M, alpha, s
             Sys.sleep(0.1)
         }
     })
-    
+    ololo <<- stat.max
     alphas = seq(alpha,0 ,-0.0001)
     thlds  = matrix(0,length(H), length(alphas))
     for (h in seq_along(H)) {
-      thlds[h, ] = quantile(stat[h,!is.na(stat[h, ]) ], probs = 1 - alphas)
+        thlds[h, ] = quantile(stat[h,!is.na(stat[h, ]) ], probs = 1 - alphas)
     }
-  
     withProgress(message = 'Computing critical values', value = 0.01 ,{
         for (i in seq_along(alphas)) {
             stat.normalized = stat.triang - thlds[, i]
